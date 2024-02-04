@@ -1,67 +1,78 @@
-import openpyxl
+import  openpyxl
 import numpy as np
-from openpyxl import styles
-import os
-import sys
+import matplotlib.pyplot as plt
 
-filename = "" #Direccion del archivo, con su nombre y extension
-path = os.path.join(filename)
-#Verifica si el archivo existe, en caso de que no, se sale
-if not os.path.exists(path):
-    sys.exit()
-wb = openpyxl.load_workbook(path)
-sheet = wb.active
+sheet = openpyxl.load_workbook("prodlevelizer.xlsx")
+ws = sheet.active
 
-#Genera datos aleatorios y los escribe en el sheet
-data = np.random.randint(-100,100,10000)
+hoy_row = 4 #Fila hoy
 
-sheet["A1"] = "Datos"
-for i,d in enumerate(data):
-    sheet["A{}".format(i+2)] = d
 
-#A partir de aca, se comenzará a elaborar el algoritmo
-#Dado que ya tenemos la variable data, trabajaremos con ella
-#En caso de querer obtener los datos del sheet, se hace esto
-'''
-data = []
-#Numero de datos manejados
-s = 10000
-#Suponiendo que la tabla este en la columna A y empecemos desde el 1
-#Estamos suponiendo que los datos son enteros, en caso de ser flotantes se cambia int por float
-#Si usas flotantes cuidado porque no son fracciones, 1/3 no es 0.333333333330
-for i in range(s):
-    data.append(int(sheet["A{}".format(i+2)]))
-#Se convierte a array de numpy
-data = np.array(data)
-'''
-def random_c():
-    txt = ""
-    cls = np.random.randint(0,101,[3])
-    for n in cls:
-        if n == 100:
-            txt += "FF"
-        elif n<=9:
-            txt += "0"+str(n)
-        else:
-            txt += str(n)
-    return txt
+def calcular_dia(i,fila_hoy,ajuste1,ajuste2,entradas_ajustadas,inventario_forecast,inventario):
 
-p = [False for l in range(len(data))]
-c = np.zeros_like(data)
-
-for i,d in enumerate(data):
-    if not p[i]:
-        for k,dd in enumerate(data[i+1:]):
-            if d == -dd and not p[k]:
-                c[i] = k
-                c[k] = i
-                p[i]=True
-                p[k]=True
-                color = random_c()
-                sheet["A{}".format(i+k+3)].fill = styles.PatternFill("solid",start_color=color,end_color=color)
-                sheet["A{}".format(i+2)].fill = styles.PatternFill("solid",start_color=color,end_color=color)
-                break
-        continue
+    min_inv = ws.cell(row=fila_hoy+i-1,column=6).value
+    max_inv = ws.cell(row=fila_hoy+i-1,column=7).value
+    entradas_produccion = ws.cell(row=fila_hoy+i-1,column=4).value
+    salidas_produccion = ws.cell(row=fila_hoy+i-1,column=3).value
     
-#Y listo
-wb.save("libro2.xlsx")
+    #Calculamos el ajuste1
+    if i==0:
+        if inventario>min_inv and inventario<max_inv:
+            ajuste1.append(1)
+        elif inventario>max_inv:
+            ajuste1.append(0.9)
+        else:
+            ajuste1.append(1.1)
+        ws.cell(row=hoy_row-1,column=8).value = ajuste1[-1]
+    #Calculamos el ajuste2,la primer entrada ajustada y el primer forecast
+    elif i==1:
+        print(ajuste1)
+        entrada_ajustada = ajuste1[-1]*entradas_produccion
+        entradas_ajustadas.append(entrada_ajustada)
+        ws.cell(row=hoy_row+i-1,column=9).value = entrada_ajustada
+        finventario = inventario+entradas_ajustadas[-1]-salidas_produccion
+        inventario_forecast.append(finventario)
+        ws.cell(row=hoy_row+i-1,column=10).value = finventario
+        if finventario>min_inv and finventario<max_inv:
+            ajuste2.append(1)
+        elif finventario>max_inv:
+            ajuste2.append(0.9)
+        else:
+            ajuste2.append(1.1)
+        ws.cell(row=hoy_row+i-1,column=11).value = ajuste2[-1]
+    #Continuamos con el punto anterior
+    elif i>1:
+        entrada_ajustada = ajuste2[-1]*entradas_produccion
+        ws.cell(row=hoy_row+i-1,column=9).value = entrada_ajustada
+        entradas_ajustadas.append(entrada_ajustada)
+        finventario_anterior = inventario_forecast[-1]
+        finventario = finventario_anterior+entradas_ajustadas[-1]-salidas_produccion
+        inventario_forecast.append(finventario)
+        ws.cell(row=hoy_row+i-1,column=10).value = finventario
+
+        if finventario>min_inv and finventario<max_inv:
+            ajuste2.append(1)
+        elif finventario>max_inv:
+            ajuste2.append(0.9)
+        else:
+            ajuste2.append(1.1)
+        ws.cell(row=hoy_row+i-1,column=11).value = ajuste2[-1]
+def calcular_semana(fila_hoy):
+    ajuste1 = []
+    ajuste2 = []
+    entradas_ajustadas = []
+    inventario_forecast = []
+    inventario = ws.cell(row=hoy_row-1,column=5).value
+    classes = ["Ajuste 1","Entradas ajustadas","Inventario forecast","Ajuste2"]
+    style = ws.cell(row=1,column=1)._style
+    for i in range(len(classes)):
+        ws.cell(row=1,column=i+8).value = classes[i]
+        ws.cell(row=1,column=i+8)._style = style
+        print(ws.cell(row=1,column=i+8).value)
+        #ws.cell(row=1,column=i+1).font = openpyxl.styles.Font(b=True, color="00FFFF00")
+    for i in range(7):
+        calcular_dia(i,fila_hoy,ajuste1,ajuste2,entradas_ajustadas,inventario_forecast,inventario)
+
+
+calcular_semana(4)
+sheet.save("nuevo_levelizer.xlsx")
